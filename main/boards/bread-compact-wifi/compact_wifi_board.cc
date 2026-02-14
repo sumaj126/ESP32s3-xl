@@ -15,6 +15,9 @@
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_timer.h>
+#include <sys/time.h>
+#include <time.h>
 
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
@@ -33,6 +36,11 @@ private:
     Button volume_up_button_;
     Button volume_down_button_;
     DHT20Sensor* dht20_sensor_;
+
+    // Standby screen timer
+    esp_timer_handle_t standby_timer_ = nullptr;
+    float last_temperature_ = 0.0f;
+    float last_humidity_ = 0.0f;
 
     void InitializeDisplayI2c() {
         i2c_master_bus_config_t bus_config = {
@@ -173,9 +181,119 @@ private:
         } else {
             ESP_LOGW("CompactWifiBoard", "DHT20 not initialized, skipping MCP tool registration");
         }
+
+        // 初始化待机屏幕定时器
+        const esp_timer_create_args_t standby_timer_args = {
+            .callback = [](void* arg) {
+                CompactWifiBoard* board = static_cast<CompactWifiBoard*>(arg);
+                board->UpdateStandbyScreen();
+            },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "standby_timer"
+        };
+        esp_timer_create(&standby_timer_args, &standby_timer_);
+
+        // 每 1 秒更新一次待机屏幕
+        esp_timer_start_periodic(standby_timer_, 1000000); // 1 second
+
+        // 监听设备状态变化
+        Application::GetInstance().GetStateMachine().AddStateChangeListener(
+            [this](DeviceState old_state, DeviceState new_state) {
+                OnDeviceStateChanged(old_state, new_state);
+            });
+    }
+
+    void OnDeviceStateChanged(DeviceState old_state, DeviceState new_state) {
+        // 进入待机状态时显示待机屏幕
+        if (new_state == kDeviceStateIdle) {
+            OledDisplay* oled = dynamic_cast<OledDisplay*>(display_);
+            if (oled) {
+                oled->ShowStandbyScreen(true);
+            }
+        } else {
+            // 其他状态隐藏待机屏幕
+            OledDisplay* oled = dynamic_cast<OledDisplay*>(display_);
+            if (oled) {
+                oled->ShowStandbyScreen(false);
+            }
+        }
+    }
+
+    void UpdateStandbyScreen() {
+        // 只在待机状态下更新
+        if (Application::GetInstance().GetDeviceState() != kDeviceStateIdle) {
+            return;
+        }
+
+        // 获取当前时间
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        struct tm timeinfo;
+        localtime_r(&tv.tv_sec, &timeinfo);
+
+        char date_str[32];
+        char time_str[32];
+
+        // 格式化日期和星期
+        const char* weekdays[] = {"日", "一", "二", "三", "四", "五", "六"};
+        snprintf(date_str, sizeof(date_str), "%04d-%02d-%02d 星期%s",
+                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                 weekdays[timeinfo.tm_wday]);
+
+        // 格式化时间
+        snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d",
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+
+        // 读取温湿度
+        float temp = last_temperature_;
+        float humidity = last_humidity_;
+
+        if (dht20_sensor_ != nullptr && dht20_sensor_->IsInitialized()) {
+            float t, h;
+            if (dht20_sensor_->ReadData(&t, &h)) {
+                last_temperature_ = t;
+                last_humidity_ = h;
+                temp = t;
+                humidity = h;
+            }
+        }
+
+        // 更新显示
+        OledDisplay* oled = dynamic_cast<OledDisplay*>(display_);
+        if (oled) {
+            oled->UpdateStandbyData(date_str, time_str, temp, humidity);
+        }
+    }
+        static LampController lamp(LAMP_GPIO);
+
+        // 初始化 DHT20 传感器（复用显示 I2C 总线）
+        dht20_sensor_ = new DHT20Sensor(display_i2c_bus_, DHT20_I2C_ADDR);
+
+        if (dht20_sensor_->IsInitialized()) {
+            auto& mcp_server = McpServer::GetInstance();
+
+            // 注册 MCP 工具：读取温湿度
+            mcp_server.AddTool("sensor.read_temperature_humidity",
+                "读取当前环境的温度和湿度数据",
+                PropertyList(),
+                [this](const PropertyList& properties) -> ReturnValue {
+                    std::string data = dht20_sensor_->GetJsonData();
+                    cJSON* result = cJSON_Parse(data.c_str());
+                    return result;
+                });
+
+            ESP_LOGI("CompactWifiBoard", "DHT20 MCP tool registered");
+        } else {
+            ESP_LOGW("CompactWifiBoard", "DHT20 not initialized, skipping MCP tool registration");
+        }
     }
 
     ~CompactWifiBoard() {
+        if (standby_timer_) {
+            esp_timer_stop(standby_timer_);
+            esp_timer_delete(standby_timer_);
+        }
         if (dht20_sensor_) {
             delete dht20_sensor_;
         }

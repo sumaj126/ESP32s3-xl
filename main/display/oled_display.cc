@@ -394,3 +394,114 @@ void OledDisplay::SetTheme(Theme* theme) {
     auto screen = lv_screen_active();
     lv_obj_set_style_text_font(screen, text_font, 0);
 }
+
+void OledDisplay::SetupStandbyScreen() {
+    if (standby_screen_ != nullptr) {
+        return;
+    }
+
+    DisplayLockGuard lock(this);
+
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    auto text_font = lvgl_theme->text_font()->font();
+
+    auto screen = lv_screen_active();
+
+    standby_screen_ = lv_obj_create(screen);
+    lv_obj_set_size(standby_screen_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(standby_screen_, 0, 0);
+    lv_obj_set_style_bg_opa(standby_screen_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(standby_screen_, 0, 0);
+    lv_obj_set_style_pad_all(standby_screen_, 0, 0);
+    lv_obj_set_scrollbar_mode(standby_screen_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+
+    // Date label (small font, centered)
+    standby_date_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(standby_date_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(standby_date_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(standby_date_label_, text_font, 0);
+    lv_label_set_text(standby_date_label_, "");
+    lv_obj_align(standby_date_label_, LV_ALIGN_TOP_MID, 0, 2);
+
+    // Time label (large font, centered)
+    standby_time_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(standby_time_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(standby_time_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(standby_time_label_, "");
+    lv_obj_align(standby_time_label_, LV_ALIGN_TOP_MID, 0, 12);
+
+    // Temperature and humidity row
+    lv_obj_t* sensor_row = lv_obj_create(standby_screen_);
+    lv_obj_set_size(sensor_row, LV_HOR_RES, 20);
+    lv_obj_set_style_bg_opa(sensor_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(sensor_row, 0, 0);
+    lv_obj_set_style_pad_all(sensor_row, 0, 0);
+    lv_obj_set_flex_flow(sensor_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(sensor_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(sensor_row, LV_ALIGN_BOTTOM_MID, 0, -2);
+
+    // Temperature label
+    standby_temp_label_ = lv_label_create(sensor_row);
+    lv_obj_set_style_text_font(standby_temp_label_, text_font, 0);
+    lv_label_set_text(standby_temp_label_, "🌡️ --°C");
+    lv_obj_set_flex_grow(standby_temp_label_, 1);
+
+    // Humidity label
+    standby_humid_label_ = lv_label_create(sensor_row);
+    lv_obj_set_style_text_font(standby_humid_label_, text_font, 0);
+    lv_label_set_text(standby_humid_label_, "💧 --%");
+    lv_obj_set_flex_grow(standby_humid_label_, 1);
+}
+
+void OledDisplay::ShowStandbyScreen(bool show) {
+    if (standby_screen_ == nullptr) {
+        SetupStandbyScreen();
+    }
+
+    DisplayLockGuard lock(this);
+
+    if (show) {
+        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+        if (side_bar_ != nullptr) {
+            lv_obj_add_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_remove_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+        standby_visible_ = true;
+    } else {
+        lv_obj_remove_flag(container_, LV_OBJ_FLAG_HIDDEN);
+        if (side_bar_ != nullptr) {
+            lv_obj_remove_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+        standby_visible_ = false;
+    }
+}
+
+void OledDisplay::UpdateStandbyData(const char* date, const char* time, float temp, float humidity) {
+    if (standby_screen_ == nullptr || !standby_visible_) {
+        return;
+    }
+
+    DisplayLockGuard lock(this);
+
+    if (date != nullptr && standby_date_label_ != nullptr) {
+        lv_label_set_text(standby_date_label_, date);
+    }
+
+    if (time != nullptr && standby_time_label_ != nullptr) {
+        lv_label_set_text(standby_time_label_, time);
+    }
+
+    if (standby_temp_label_ != nullptr) {
+        char temp_str[32];
+        snprintf(temp_str, sizeof(temp_str), "🌡️ %.1f°C", temp);
+        lv_label_set_text(standby_temp_label_, temp_str);
+    }
+
+    if (standby_humid_label_ != nullptr) {
+        char humid_str[32];
+        snprintf(humid_str, sizeof(humid_str), "💧 %.1f%%", humidity);
+        lv_label_set_text(standby_humid_label_, humid_str);
+    }
+}

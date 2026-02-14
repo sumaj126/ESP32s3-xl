@@ -135,8 +135,8 @@ private:
         // 使用 GPIO 17 (SDA) 和 GPIO 18 (SCL) 作为 DHT20 的 I2C 引脚
         i2c_master_bus_config_t bus_config = {
             .i2c_port = I2C_NUM_0,
-            .sda_io_num = GPIO_NUM_17,  // SDA
-            .scl_io_num = GPIO_NUM_18,  // SCL
+            .sda_io_num = GPIO_NUM_9,  // SDA
+            .scl_io_num = GPIO_NUM_8,  // SCL
             .clk_source = I2C_CLK_SRC_DEFAULT,
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
@@ -151,7 +151,7 @@ private:
             ESP_LOGW(TAG, "I2C bus initialization failed: %s (DHT20 will not work)", esp_err_to_name(ret));
             display_i2c_bus_ = nullptr;
         } else {
-            ESP_LOGI(TAG, "I2C bus initialized for DHT20 (SDA:GPIO%d, SCL:GPIO%d)", GPIO_NUM_17, GPIO_NUM_18);
+            ESP_LOGI(TAG, "I2C bus initialized for DHT20 (SDA:GPIO%d, SCL:GPIO%d)", GPIO_NUM_9, GPIO_NUM_8);
         }
     }
 

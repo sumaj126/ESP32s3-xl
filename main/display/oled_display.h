@@ -22,11 +22,21 @@ private:
     lv_obj_t *emotion_label_ = nullptr;
     lv_obj_t* chat_message_label_ = nullptr;
 
+    // Standby screen elements
+    lv_obj_t* standby_screen_ = nullptr;
+    lv_obj_t* standby_date_label_ = nullptr;
+    lv_obj_t* standby_time_label_ = nullptr;
+    lv_obj_t* standby_temp_label_ = nullptr;
+    lv_obj_t* standby_humid_label_ = nullptr;
+    bool standby_visible_ = false;
+
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
     void SetupUI_128x64();
     void SetupUI_128x32();
+    void SetupStandbyScreen();
+    void UpdateStandbyScreen(const char* date, const char* time, float temp, float humidity);
 
 public:
     OledDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, int width, int height, bool mirror_x, bool mirror_y);
@@ -35,6 +45,9 @@ public:
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void SetEmotion(const char* emotion) override;
     virtual void SetTheme(Theme* theme) override;
+
+    void ShowStandbyScreen(bool show);
+    void UpdateStandbyData(const char* date, const char* time, float temp, float humidity);
 };
 
 #endif // OLED_DISPLAY_H

@@ -91,22 +91,22 @@ void StandbyScreen::CreateUI() {
     lv_obj_set_style_text_font(weekday_label_, text_font, 0);
     lv_obj_set_style_text_color(weekday_label_, lv_color_white(), 0);
     lv_obj_set_style_text_align(weekday_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align_to(weekday_label_, date_label_, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+    lv_obj_align(weekday_label_, LV_ALIGN_TOP_MID, 0, 16 + 8 + text_font->line_height);
 
-    // 第三行：时钟（屏幕中央偏左）
+    // 第三行：时钟（屏幕中央）
     time_label_ = lv_label_create(container_);
     lv_label_set_text(time_label_, "--:--");
     lv_obj_set_style_text_font(time_label_, text_font, 0);
     lv_obj_set_style_text_color(time_label_, lv_color_white(), 0);
     lv_obj_set_style_text_align(time_label_, LV_TEXT_ALIGN_CENTER, 0);
-    
-    // 放大字体
+
+    // 放大字体（4倍）
     lv_obj_set_style_transform_scale(time_label_, 400, 0);
-    
+
     // 定位到屏幕中央偏左
     lv_obj_align(time_label_, LV_ALIGN_CENTER, -20, 0);
 
-    // 第三行：温湿度（底部左右）
+    // 第四行：温湿度（底部左右）
     // 左边：温度
     temp_icon_ = lv_label_create(container_);
     lv_label_set_text(temp_icon_, LV_SYMBOL_IMAGE "°C");
@@ -287,6 +287,6 @@ void StandbyScreen::UpdateTimerCallback() {
     snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d",
              timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
-    ESP_LOGI("StandbyScreen", "Updating time: %s %s %s", date_buf, weekday, time_buf);
+    ESP_LOGI("StandbyScreen", "Updating time: %s %s", date_buf, weekday);
     UpdateTime(date_buf, weekday, time_buf);
 }
