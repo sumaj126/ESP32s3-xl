@@ -231,17 +231,17 @@ private:
 
                 case kDeviceStateListening:
                 case kDeviceStateSpeaking:
-                    // 对话中（录音或播放），隐藏待机界面显示对话内容
+                case kDeviceStateWifiConfiguring:
+                case kDeviceStateConnecting:
+                    // 对话中（录音或播放）、配网或连接中，隐藏待机界面显示主界面
                     if (display_) {
-                        ESP_LOGI(TAG, "Listening/Speaking state - hiding standby screen");
+                        ESP_LOGI(TAG, "Active state %d - hiding standby screen", current_state);
                         display_->HideStandbyScreen();
                     }
                     break;
 
-                case kDeviceStateConnecting:
                 case kDeviceStateActivating:
                 case kDeviceStateStarting:
-                case kDeviceStateWifiConfiguring:
                 case kDeviceStateUpgrading:
                 case kDeviceStateAudioTesting:
                 case kDeviceStateFatalError:
@@ -294,8 +294,8 @@ private:
         };
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &timer));
 
-        // 每秒检查一次状态
-        ESP_ERROR_CHECK(esp_timer_start_periodic(timer, 1000000)); // 1秒
+        // 每3秒检查一次状态和温湿度（降低频率避免影响唤醒）
+        ESP_ERROR_CHECK(esp_timer_start_periodic(timer, 3000000)); // 3秒
         ESP_LOGI(TAG, "Device state monitor started");
     }
 

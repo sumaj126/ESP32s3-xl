@@ -194,8 +194,8 @@ private:
         };
         esp_timer_create(&standby_timer_args, &standby_timer_);
 
-        // 每 1 秒更新一次待机屏幕
-        esp_timer_start_periodic(standby_timer_, 1000000); // 1 second
+        // 每 3 秒更新一次待机屏幕（降低频率避免影响唤醒）
+        esp_timer_start_periodic(standby_timer_, 3000000); // 3 seconds
 
         // 监听设备状态变化
         Application::GetInstance().GetStateMachine().AddStateChangeListener(
