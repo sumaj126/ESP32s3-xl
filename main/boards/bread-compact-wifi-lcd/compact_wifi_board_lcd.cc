@@ -18,6 +18,8 @@
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
 #include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #if defined(LCD_TYPE_ILI9341_SERIAL)
 #include "esp_lcd_ili9341.h"
@@ -72,6 +74,7 @@ private:
 
     // 上一次的设备状态，用于检测状态变化
     DeviceState last_device_state_;
+    volatile bool trigger_state_check_;  // 定时器触发标志
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
@@ -209,6 +212,30 @@ private:
         board->CheckDeviceState();
     }
 
+    // 温湿度更新任务
+    static void DHT20UpdateTask(void* arg) {
+        CompactWifiBoardLCD* board = static_cast<CompactWifiBoardLCD*>(arg);
+
+        while (true) {
+            vTaskDelay(pdMS_TO_TICKS(5000)); // 每5秒读取一次
+
+            // 只在待机模式下读取温湿度
+            if (board->display_ && board->dht20_sensor_ && board->dht20_sensor_->IsInitialized()) {
+                auto& app = Application::GetInstance();
+                if (app.GetDeviceState() == kDeviceStateIdle) {
+                    float temp, humi;
+                    if (board->dht20_sensor_->ReadData(&temp, &humi)) {
+                        ESP_LOGI(TAG, "DHT20 read successful: temp=%.1f°C, humi=%.1f%%", temp, humi);
+                        board->display_->UpdateStandbyTemperatureHumidity(temp, humi);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to read DHT20 data");
+                        board->display_->UpdateStandbyTemperatureHumidity(NAN, NAN);
+                    }
+                }
+            }
+        }
+    }
+
     // 检查设备状态并切换界面
     void CheckDeviceState() {
         auto& app = Application::GetInstance();
@@ -261,29 +288,11 @@ private:
 
             last_device_state_ = current_state;
         }
-
-        // 更新温湿度数据（在待机模式下）
-        if (display_) {
-            if (dht20_sensor_ && dht20_sensor_->IsInitialized()) {
-                float temp, humi;
-                if (dht20_sensor_->ReadData(&temp, &humi)) {
-                    ESP_LOGI(TAG, "DHT20 read successful: temp=%.1f°C, humi=%.1f%%", temp, humi);
-                    display_->UpdateStandbyTemperatureHumidity(temp, humi);
-                } else {
-                    ESP_LOGW(TAG, "Failed to read DHT20 data");
-                    display_->UpdateStandbyTemperatureHumidity(NAN, NAN);
-                }
-            } else {
-                // DHT20未初始化，显示占位符
-                ESP_LOGW(TAG, "DHT20 not available (sensor=%p), showing placeholder",
-                         (void*)dht20_sensor_);
-                display_->UpdateStandbyTemperatureHumidity(NAN, NAN);
-            }
-        }
     }
 
     // 启动设备状态监控
     void StartDeviceStateMonitor() {
+        // 启动状态检查定时器（每200ms检查一次状态变化）
         esp_timer_handle_t timer;
         esp_timer_create_args_t timer_args = {
             .callback = DeviceStateMonitorCallback,
@@ -293,9 +302,11 @@ private:
             .skip_unhandled_events = false,
         };
         ESP_ERROR_CHECK(esp_timer_create(&timer_args, &timer));
+        ESP_ERROR_CHECK(esp_timer_start_periodic(timer, 200000)); // 200ms检查状态
 
-        // 每3秒检查一次状态和温湿度（降低频率避免影响唤醒）
-        ESP_ERROR_CHECK(esp_timer_start_periodic(timer, 3000000)); // 3秒
+        // 启动DHT20温湿度更新任务（独立任务，每5秒读取一次，避免阻塞唤醒检测）
+        xTaskCreate(DHT20UpdateTask, "dht20_update", 4096, this, 3, nullptr);
+
         ESP_LOGI(TAG, "Device state monitor started");
     }
 
@@ -304,7 +315,8 @@ public:
         boot_button_(BOOT_BUTTON_GPIO),
         display_(nullptr),
         dht20_sensor_(nullptr),
-        last_device_state_(kDeviceStateUnknown) {
+        last_device_state_(kDeviceStateUnknown),
+        trigger_state_check_(false) {
         InitializeSpi();
         InitializeLcdDisplay();
         InitializeDisplayI2c();
